@@ -8,13 +8,14 @@ import sys
 import threading
 import time
 from types import FrameType, ModuleType
+from dataclasses import dataclass, astuple
+from collections import defaultdict
 
 from PIL import Image, ImageDraw
 
 import cherrypy
 
-from . import reftree 
-
+from . import reftree, util
 
 def get_repr(obj, limit=250):
     return html.escape(reftree.get_repr(obj, limit))
@@ -42,6 +43,20 @@ def template(name, **params):
     p.update(params)
     return open(os.path.join(localDir, name)).read() % p
 
+@dataclass
+class TypeInfo:
+    count: int = 0
+    bytesize: int = 0
+
+    def __iadd__(self, instance):
+        self.count += 1
+        self.bytesize += sys.getsizeof(instance)
+
+    def __iter__(self):
+        return iter(astuple(self))
+
+def resolve_typename(typeobj: type):
+    return typeobj.__qualname__
 
 class Root:
     
@@ -49,12 +64,15 @@ class Root:
     maxhistory = 300
     
     def __init__(self):
-        self.history = {}
+        self.history = defaultdict(lambda: self.empty_history(self.samples))
         self.samples = 0
         cherrypy.engine.subscribe('exit', self.stop)
         self.runthread = threading.Thread(target=self.start)
         self.runthread.start()
-    
+
+    def empty_history(self, length: int):
+        return [TypeInfo()] * self.samples
+
     def start(self):
         self.running = True
         while self.running:
@@ -64,19 +82,14 @@ class Root:
     def tick(self):
         gc.collect()
         
-        typecounts = {}
+        typeinfo = defaultdict(TypeInfo)
+
         for obj in gc.get_objects():
-            objtype = type(obj)
-            if objtype in typecounts:
-                typecounts[objtype] += 1
-            else:
-                typecounts[objtype] = 1
+            info = typeinfo[type(obj)]
+            info += obj
         
-        for objtype, count in typecounts.items():
-            typename = objtype.__module__ + "." + objtype.__name__
-            if typename not in self.history:
-                self.history[typename] = [0] * self.samples
-            self.history[typename].append(count)
+        for objtype, info in typeinfo.items():
+            self.history[resolve_typename(objtype)].append(info)
         
         samples = self.samples + 1
         
@@ -84,7 +97,7 @@ class Root:
         for typename, hist in self.history.items():
             diff = samples - len(hist)
             if diff > 0:
-                hist.extend([0] * diff)
+                hist.extend(self.empty_history(diff))
         
         # Truncate history to self.maxhistory
         if samples > self.maxhistory:
@@ -96,29 +109,33 @@ class Root:
     def stop(self):
         self.running = False
     
-    def index(self, floor=0):
+    def index(self, ref_floor=0, byte_floor=0):
         rows = []
-        typenames = self.history.keys()
-        for typename in sorted(typenames):
-            hist = self.history[typename]
-            maxhist = max(hist)
-            if maxhist > int(floor):
-                row = ('<div class="typecount">%s<br />'
-                       '<img class="chart" src="%s" /><br />'
-                       'Min: %s Cur: %s Max: %s <a href="%s">TRACE</a></div>'
-                       % (html.escape(typename),
-                          url("chart/%s" % typename),
-                          min(hist), hist[-1], maxhist,
-                          url("trace/%s" % typename),
-                          )
-                       )
+
+        for typename, info_hist in sorted(self.history.items(), key=lambda kv: kv[1][-1].bytesize, reverse=True):
+            min_refs, max_refs = util.minmax(info.count for info in info_hist)
+            min_bytes, max_bytes = util.minmax(info.bytesize for info in info_hist)
+            current_refs, current_bytes = info_hist[-1]
+
+            if max_refs > int(ref_floor) and max_bytes > int(byte_floor):
+                row = f"""
+                    <div class="typecount">{html.escape(typename)}<br/>
+                    Refs - Min: {min_refs} Cur: {current_refs} Max: {max_refs} <br/>
+                    <img class="chart" src="{url(f'refchart/{typename}')}"/><br/>
+                    Refs - Min: {min_bytes} Cur: {current_bytes} Max: {max_bytes} <br/>
+                    <img class="chart" src="{url(f'memchart/{typename}')}"/><br/>
+                    <a href="{url(f'trace/{typename}')}">TRACE</a></div>
+                """
+
                 rows.append(row)
         return template("graphs.html", output="\n".join(rows))
     index.exposed = True
     
-    def chart(self, typename):
+    def chart(self, typename: str, field: str):
         """Return a sparkline chart of the given type."""
-        data = self.history[typename]
+        
+        data = list(getattr(info, field) for info in self.history[typename])
+
         height = 20.0
         scale = height / max(data)
         im = Image.new("RGB", (len(data), int(height)), 'white')
@@ -133,7 +150,14 @@ class Root:
         
         cherrypy.response.headers["Content-Type"] = "image/png"
         return result
-    chart.exposed = True
+
+    def refchart(self, typename: str):
+        return self.chart(typename, 'count')
+    refchart.exposed = True
+
+    def memchart(self, typename: str):
+        return self.chart(typename, 'bytesize')
+    memchart.exposed = True
     
     def trace(self, typename, objid=None):
         gc.collect()
@@ -152,7 +176,7 @@ class Root:
         rows = []
         for obj in gc.get_objects():
             objtype = type(obj)
-            if objtype.__module__ + "." + objtype.__name__ == typename:
+            if resolve_typename(objtype) == typename:
                 rows.append("<p class='obj'>%s</p>"
                             % ReferrerTree(obj).get_repr(obj))
         if not rows:
@@ -166,7 +190,7 @@ class Root:
         for obj in all_objs:
             if id(obj) == objid:
                 objtype = type(obj)
-                if objtype.__module__ + "." + objtype.__name__ != typename:
+                if resolve_typename(objtype) != typename:
                     rows = ["<h3>The object you requested is no longer "
                             "of the correct type.</h3>"]
                 else:
@@ -211,7 +235,7 @@ class Root:
         for obj in all_objs:
             if id(obj) == objid:
                 objtype = type(obj)
-                if objtype.__module__ + "." + objtype.__name__ != typename:
+                if resolve_typename(objtype) != typename:
                     rows = ["<h3>The object you requested is no longer "
                             "of the correct type.</h3>"]
                 else:
@@ -297,7 +321,7 @@ class ReferrerTree(reftree.Tree):
     def get_repr(self, obj, referent=None):
         """Return an HTML tree block describing the given object."""
         objtype = type(obj)
-        typename = objtype.__module__ + "." + objtype.__name__
+        typename = resolve_typename(objtype)
         prettytype = typename.replace("__builtin__.", "")
         
         name = getattr(obj, "__name__", "")
@@ -325,12 +349,3 @@ class ReferrerTree(reftree.Tree):
             if getattr(obj, k, None) is referent:
                 return " (via its %r attribute)" % k
         return ""
-
-
-if __name__ == '__main__':
-##    cherrypy.config.update({"environment": "production"})
-    try:
-        cherrypy.quickstart(Root())
-    except AttributeError:
-        cherrypy.root = Root()
-        cherrypy.server.start()
