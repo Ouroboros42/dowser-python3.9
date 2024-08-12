@@ -1,0 +1,18 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [ "setuptools >= 61.0" ]
+
+[project]
+
+name = "dowser39"
+version = "0.0"
+
+requires-python = ">= 3.9.7"
+
+dependencies = [
+    "CherryPy >= 18.10.0",
+    "pillow >= 10.4.0",
+]
+
+[tool.setuptools.package-data]
+dowser = [ "*.html", "*.css" ]
