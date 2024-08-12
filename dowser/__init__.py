@@ -51,8 +51,7 @@ class Root:
     def __init__(self):
         self.history = {}
         self.samples = 0
-        if cherrypy.__version__ >= '3.1':
-            cherrypy.engine.subscribe('exit', self.stop)
+        cherrypy.engine.subscribe('exit', self.stop)
         self.runthread = threading.Thread(target=self.start)
         self.runthread.start()
     
