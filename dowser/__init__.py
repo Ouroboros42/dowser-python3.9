@@ -122,7 +122,7 @@ class Root:
                     <div class="typecount">{html.escape(typename)}<br/>
                     Refs - Min: {min_refs} Cur: {current_refs} Max: {max_refs} <br/>
                     <img class="chart" src="{url(f'refchart/{typename}')}"/><br/>
-                    Refs - Min: {min_bytes} Cur: {current_bytes} Max: {max_bytes} <br/>
+                    Bytes - Min: {min_bytes} Cur: {current_bytes} Max: {max_bytes} <br/>
                     <img class="chart" src="{url(f'memchart/{typename}')}"/><br/>
                     <a href="{url(f'trace/{typename}')}">TRACE</a></div>
                 """
