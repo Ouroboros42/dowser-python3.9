@@ -38,7 +38,7 @@ class Tree:
             count += 1
             if maxresults and count >= maxresults:
                 yield 0, 0, "==== Max results reached ===="
-                raise StopIteration
+                return
     
     def print_tree(self, maxresults=100, maxdepth=None):
         """Walk the object tree, pretty-printing each branch."""
@@ -81,7 +81,7 @@ class ReferentTree(Tree):
     def _gen(self, obj, depth=0):
         if self.maxdepth and depth >= self.maxdepth:
             yield depth, 0, "---- Max depth reached ----"
-            raise StopIteration
+            return
         
         for ref in gc.get_referents(obj):
             if id(ref) in self._ignore:
@@ -102,7 +102,7 @@ class ReferrerTree(Tree):
     def _gen(self, obj, depth=0):
         if self.maxdepth and depth >= self.maxdepth:
             yield depth, 0, "---- Max depth reached ----"
-            raise StopIteration
+            return
         
         refs = gc.get_referrers(obj)
         refiter = iter(refs)
@@ -145,12 +145,12 @@ class CircularReferents(Tree):
             count += 1
             if maxresults and count >= maxresults:
                 yield 0, 0, "==== Max results reached ===="
-                raise StopIteration
+                return
     
     def _gen(self, obj, depth=0, trail=None):
         if self.maxdepth and depth >= self.maxdepth:
             self.stops += 1
-            raise StopIteration
+            return
         
         if trail is None:
             trail = []

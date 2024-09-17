@@ -1,4 +1,4 @@
-from . import Root
+from .Root import Root
 import cherrypy
 import logging
 import logging.config
@@ -42,27 +42,21 @@ class MemoryApp:
                 'level':'WARNING',
                 'class':'logging.StreamHandler',
                 'formatter': 'void',
-                'stream': 'ext://sys.stdout'
+                'stream': 'ext://sys.stderr'
             },
             
             'cherrypy_access': {
                 'level':'WARNING',
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class':'logging.StreamHandler',
                 'formatter': 'void',
-                'filename': 'access.log',
-                'maxBytes': 10485760,
-                'backupCount': 20,
-                'encoding': 'utf8'
+                'stream': 'ext://sys.stderr'
             },
 
             'cherrypy_error': {
                 'level':'WARNING',
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class':'logging.StreamHandler',
                 'formatter': 'void',
-                'filename': 'errors.log',
-                'maxBytes': 10485760,
-                'backupCount': 20,
-                'encoding': 'utf8'
+                'stream': 'ext://sys.stderr'
             },
         },
 
