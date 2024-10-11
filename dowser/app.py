@@ -4,12 +4,13 @@ import logging
 import logging.config
 
 class MemoryApp:
-    def __init__(self, port: int):
+    def __init__(self, port: int, **root_kwargs):
         self.port = port
+        self.root_kwargs = root_kwargs
         logging.config.dictConfig(self.LOG_CONF)
 
     def __enter__(self):
-        self.root = Root()
+        self.root = Root(**self.root_kwargs)
 
         cherrypy.tree.mount(self.root)
         cherrypy.config.update({
